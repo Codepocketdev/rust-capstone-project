@@ -8,20 +8,17 @@ use std::fs::File;
 use std::io::Write;
 
 // Node access params
-const RPC_URL: &str = "http://127.0.0.1:18443"; // Default regtest RPC port
+const RPC_URL: &str = "http://127.0.0.1:18443";
 const RPC_USER: &str = "alice";
 const RPC_PASS: &str = "password";
 
-// You can use calls not provided in RPC lib API using the generic `call` function.
-// An example of using the `send` RPC call, which doesn't have exposed API.
-// You can also use serde_json `Deserialize` derivation to capture the returned json result.
 fn send(rpc: &Client, addr: &str) -> bitcoincore_rpc::Result<String> {
     let args = [
-        json!([{addr : 100 }]), // recipient address
-        json!(null),            // conf target
-        json!(null),            // estimate mode
-        json!(null),            // fee rate in sats/vb
-        json!(null),            // Empty option object
+        json!([{addr : 100 }]),
+        json!(null),
+        json!(null),
+        json!(null),
+        json!(null),
     ];
 
     #[derive(Deserialize)]
@@ -41,15 +38,56 @@ fn main() -> bitcoincore_rpc::Result<()> {
         Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
     )?;
 
-    // Get blockchain info
-    let blockchain_info = rpc.get_blockchain_info()?;
-    println!("Blockchain Info: {:?}", blockchain_info);
+    // Create or load Miner wallet
+    let miner_rpc = match rpc.create_wallet("Miner", None, None, None, None) {
+        Ok(_) => Client::new(
+            &format!("{}/wallet/Miner", RPC_URL),
+            Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
+        )?,
+        Err(_) => {
+            let _ = rpc.load_wallet("Miner");
+            Client::new(
+                &format!("{}/wallet/Miner", RPC_URL),
+                Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
+            )?
+        }
+    };
 
-    // Create/Load the wallets, named 'Miner' and 'Trader'. Have logic to optionally create/load them if they do not exist or not loaded already.
+    // Create or load Trader wallet
+    let trader_rpc = match rpc.create_wallet("Trader", None, None, None, None) {
+        Ok(_) => Client::new(
+            &format!("{}/wallet/Trader", RPC_URL),
+            Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
+        )?,
+        Err(_) => {
+            let _ = rpc.load_wallet("Trader");
+            Client::new(
+                &format!("{}/wallet/Trader", RPC_URL),
+                Auth::UserPass(RPC_USER.to_owned(), RPC_PASS.to_owned()),
+            )?
+        }
+    };
 
-    // Generate spendable balances in the Miner wallet. How many blocks needs to be mined?
+    // Generate a mining address from Miner wallet with label "Mining Reward"
+    let mining_address = miner_rpc.get_new_address(Some("Mining Reward"), None)?;
+    let mining_address = mining_address
+        .require_network(bitcoincore_rpc::bitcoin::Network::Regtest)
+        .unwrap();
 
-    // Load Trader wallet and generate a new address
+    // Mine 101 blocks to get spendable balance.
+    // Coinbase rewards require 100 confirmations before they can be spent.
+    // So the first block reward only becomes spendable after 100 more blocks are mined on top of it.
+    miner_rpc.generate_to_address(101, &mining_address)?;
+
+    // Print Miner wallet balance
+    let miner_balance = miner_rpc.get_balance(None, None)?;
+    println!("Miner balance: {} BTC", miner_balance);
+
+    // Generate a receiving address from Trader wallet with label "Received"
+    let trader_address = trader_rpc.get_new_address(Some("Received"), None)?;
+    let trader_address = trader_address
+        .require_network(bitcoincore_rpc::bitcoin::Network::Regtest)
+        .unwrap();
 
     // Send 20 BTC from Miner to Trader
 
