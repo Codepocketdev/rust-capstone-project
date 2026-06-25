@@ -90,10 +90,59 @@ fn main() -> bitcoincore_rpc::Result<()> {
         .unwrap();
 
     // Send 20 BTC from Miner to Trader
+    let amount = Amount::from_btc(20.0)?;
+    let txid = miner_rpc.send_to_address(
+        &trader_address,
+        amount,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )?;
+    println!("Transaction ID: {}", txid);
 
-    // Check transaction in mempool
+    // Fetch unconfirmed transaction from mempool
+    #[derive(Deserialize, Debug)]
+    struct MempoolEntry {
+        fees: MempoolFees,
+        vsize: u64,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct MempoolFees {
+        base: f64,
+    }
+
+    let mempool_entry = rpc.call::<MempoolEntry>("getmempoolentry", &[json!(txid.to_string())])?;
+    println!("Mempool entry: {:?}", mempool_entry);
 
     // Mine 1 block to confirm the transaction
+    let block_hashes = miner_rpc.generate_to_address(1, &mining_address)?;
+    let confirm_block_hash = &block_hashes[0];
+
+    // Get block info to find block height
+    let block_info = rpc.get_block_info(confirm_block_hash)?;
+    let block_height = block_info.height;
+
+    // Structs for deserializing gettransaction response
+    #[derive(Deserialize, Debug)]
+    struct TxDetail {
+        txid: String,
+        fee: f64,
+        details: Vec<TxDetailEntry>,
+        decoded: DecodedTx,
+        blockhash: String,
+        blockheight: u64,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct TxDetailEntry {
+        address: String,
+        category: String,
+        amount: f64,
+    }
 
     // Extract all required transaction details
 
