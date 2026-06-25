@@ -91,16 +91,8 @@ fn main() -> bitcoincore_rpc::Result<()> {
 
     // Send 20 BTC from Miner to Trader
     let amount = Amount::from_btc(20.0)?;
-    let txid = miner_rpc.send_to_address(
-        &trader_address,
-        amount,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )?;
+    let txid =
+        miner_rpc.send_to_address(&trader_address, amount, None, None, None, None, None, None)?;
     println!("Transaction ID: {}", txid);
 
     // Fetch unconfirmed transaction from mempool
@@ -186,10 +178,7 @@ fn main() -> bitcoincore_rpc::Result<()> {
     let prev_txid = vin.txid.clone().unwrap_or_default();
     let prev_vout = vin.vout.unwrap_or(0) as usize;
 
-    let prev_tx = rpc.call::<RawTx>(
-        "getrawtransaction",
-        &[json!(prev_txid), json!(true)],
-    )?;
+    let prev_tx = rpc.call::<RawTx>("getrawtransaction", &[json!(prev_txid), json!(true)])?;
     let miner_input_address = prev_tx.vout[prev_vout]
         .script_pub_key
         .address
