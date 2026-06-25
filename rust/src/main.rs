@@ -144,9 +144,92 @@ fn main() -> bitcoincore_rpc::Result<()> {
         amount: f64,
     }
 
-    // Extract all required transaction details
+    #[derive(Deserialize, Debug)]
+    struct DecodedTx {
+        vin: Vec<TxVin>,
+        vout: Vec<TxVout>,
+    }
 
-    // Write the data to ../out.txt in the specified format given in readme.md
+    #[derive(Deserialize, Debug)]
+    struct TxVin {
+        txid: Option<String>,
+        vout: Option<u32>,
+        coinbase: Option<String>,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct TxVout {
+        value: f64,
+        #[serde(rename = "scriptPubKey")]
+        script_pub_key: ScriptPubKey,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct ScriptPubKey {
+        address: Option<String>,
+    }
+
+    // Struct for deserializing getrawtransaction response
+    #[derive(Deserialize, Debug)]
+    struct RawTx {
+        vout: Vec<TxVout>,
+    }
+
+    let tx_detail = miner_rpc.call::<TxDetail>(
+        "gettransaction",
+        &[json!(txid.to_string()), json!(null), json!(true)],
+    )?;
+
+    // Find miner input address using getrawtransaction on the previous tx
+    // getrawtransaction works for coinbase txs unlike gettransaction
+    let vin = &tx_detail.decoded.vin[0];
+    let prev_txid = vin.txid.clone().unwrap_or_default();
+    let prev_vout = vin.vout.unwrap_or(0) as usize;
+
+    let prev_tx = rpc.call::<RawTx>(
+        "getrawtransaction",
+        &[json!(prev_txid), json!(true)],
+    )?;
+    let miner_input_address = prev_tx.vout[prev_vout]
+        .script_pub_key
+        .address
+        .clone()
+        .unwrap_or_default();
+    let miner_input_amount = prev_tx.vout[prev_vout].value;
+
+    // Find trader output and miner change output from transaction vouts
+    let trader_addr_str = trader_address.to_string();
+    let mut trader_output_address = String::new();
+    let mut trader_output_amount = 0.0_f64;
+    let mut miner_change_address = String::new();
+    let mut miner_change_amount = 0.0_f64;
+
+    for vout in &tx_detail.decoded.vout {
+        if let Some(addr) = &vout.script_pub_key.address {
+            if addr == &trader_addr_str {
+                trader_output_address = addr.clone();
+                trader_output_amount = vout.value;
+            } else {
+                miner_change_address = addr.clone();
+                miner_change_amount = vout.value;
+            }
+        }
+    }
+
+    // Write output to out.txt in the required format
+    let mut file = File::create("../out.txt")?;
+    writeln!(file, "{}", txid)?;
+    writeln!(file, "{}", miner_input_address)?;
+    writeln!(file, "{}", miner_input_amount)?;
+    writeln!(file, "{}", trader_output_address)?;
+    writeln!(file, "{}", trader_output_amount)?;
+    writeln!(file, "{}", miner_change_address)?;
+    writeln!(file, "{}", miner_change_amount)?;
+    writeln!(file, "{}", tx_detail.fee)?;
+    writeln!(file, "{}", block_height)?;
+    writeln!(file, "{}", confirm_block_hash)?;
+
+    println!("Output written to out.txt");
 
     Ok(())
 }
